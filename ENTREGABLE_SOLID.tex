@@ -1,0 +1,232 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[spanish]{babel}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+
+\geometry{margin=2.5cm}
+
+% Configuración de código
+\lstset{
+    language=Java,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=2
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Principios SOLID}
+\lhead{Sistema de Gestión de Usuarios}
+\cfoot{\thepage}
+
+\begin{document}
+
+\title{\textbf{Entregable: Principios SOLID}\\
+\large Sistema de Gestión de Usuarios con Next.js y TypeScript}
+\author{}
+\date{}
+\maketitle
+
+\section*{Descripción del Proyecto}
+
+Sistema de gestión de usuarios para una aplicación universitaria. Este sistema permite registrar usuarios, listar usuarios registrados, y gestionar operaciones de lectura y escritura de forma separada. Se implementa en TypeScript con Next.js, aplicando arquitectura limpia y los 5 principios SOLID.
+
+\subsection*{Repositorio del Proyecto}
+El código fuente completo está disponible en GitHub:
+
+\texttt{https://github.com/Dauphinsss/arqui-sw.git}
+
+\section{Proyecto: Sistema de Gestión de Usuarios}
+
+Este sistema maneja la creación de usuarios, el almacenamiento en memoria, y operaciones separadas de lectura/escritura. La implementación utiliza TypeScript con comentarios que explican cómo cada parte del código se relaciona con los principios SOLID.
+
+\section{Estructura y Código del Proyecto}
+
+\subsection*{Entidad Usuario (User.ts)}
+
+\begin{lstlisting}[language=Java]
+// Aplicacion de SRP: Clase User que solo maneja la informacion
+// basica de un usuario. No se encarga de persistencia ni logica
+// de negocio.
+
+export class User {
+  constructor(
+    public id: number,
+    public name: string,
+    public email: string
+  ) {}
+}
+\end{lstlisting}
+
+\subsection*{Repositorio de Usuarios (UserRepository.ts)}
+
+\begin{lstlisting}[language=Java]
+import { User } from "../entities/User";
+
+// ISP: Interfaz segregada para operaciones de lectura
+// Solo expone metodos de lectura
+export interface IUserReader {
+  getAll(): User[];
+}
+
+// ISP: Interfaz segregada para operaciones de escritura
+// Solo expone metodos de escritura
+export interface IUserWriter {
+  add(user: User): void;
+}
+
+// OCP: Repositorio abierto para extension pero cerrado para
+// modificacion. Se puede implementar con BD, archivo, etc.
+export interface IUserRepository
+  extends IUserReader, IUserWriter {}
+
+// Implementacion concreta en memoria
+export class InMemoryUserRepository implements IUserRepository {
+  private users: User[] = [];
+
+  getAll(): User[] {
+    return this.users;
+  }
+
+  add(user: User): void {
+    this.users.push(user);
+  }
+}
+
+// Se pueden agregar nuevas implementaciones sin modificar
+// el codigo existente:
+// export class DatabaseUserRepository implements IUserRepository
+// export class FileUserRepository implements IUserRepository
+\end{lstlisting}
+
+\subsection*{Servicios de Usuario (UserService.ts)}
+
+\begin{lstlisting}[language=Java]
+import { User } from "../entities/User";
+import { IUserRepository, IUserReader, IUserWriter }
+  from "../repositories/UserRepository";
+
+// DIP: UserService depende de abstracciones (IUserRepository),
+// no de implementaciones concretas. Esto facilita testing y
+// cambios de implementacion sin modificar el servicio.
+export class UserService {
+  constructor(private repo: IUserRepository) {}
+
+  listUsers(): User[] {
+    return this.repo.getAll();
+  }
+
+  createUser(name: string, email: string): void {
+    const id = Date.now();
+    const user = new User(id, name, email);
+    this.repo.add(user);
+  }
+}
+
+// ISP: Servicio que SOLO necesita lectura
+// No esta obligado a depender de metodos de escritura
+export class UserQueryService {
+  constructor(private reader: IUserReader) {}
+
+  listUsers(): User[] {
+    return this.reader.getAll();
+  }
+}
+
+// ISP: Servicio que SOLO necesita escritura
+// No esta obligado a depender de metodos de lectura
+export class UserCommandService {
+  constructor(private writer: IUserWriter) {}
+
+  createUser(name: string, email: string): void {
+    const id = Date.now();
+    const user = new User(id, name, email);
+    this.writer.add(user);
+  }
+}
+\end{lstlisting}
+
+\subsection*{API REST (route.ts)}
+
+\begin{lstlisting}[language=Java]
+import { NextResponse } from "next/server";
+import { InMemoryUserRepository }
+  from "@/src/core/repositories/UserRepository";
+import { UserService } from "@/src/core/services/UserService";
+
+// DIP: Inyeccion de dependencias
+// El servicio recibe la abstraccion, no la implementacion
+const repo = new InMemoryUserRepository();
+const service = new UserService(repo);
+
+export async function GET() {
+  return NextResponse.json(service.listUsers());
+}
+
+export async function POST(request: Request) {
+  const { name, email } = await request.json();
+  service.createUser(name, email);
+  return NextResponse.json({
+    message: "Usuario registrado correctamente"
+  });
+}
+
+// LSP: Se puede sustituir InMemoryUserRepository por cualquier
+// otra implementacion de IUserRepository sin romper el codigo:
+// const repo = new DatabaseUserRepository();
+// const service = new UserService(repo); // Funciona igual!
+\end{lstlisting}
+
+\section{Explicación de Principios SOLID}
+
+\begin{enumerate}
+    \item \textbf{Single Responsibility Principle (SRP):} La clase \texttt{User} solo maneja la información básica de un usuario (id, name, email). Las responsabilidades de persistencia y lógica de negocio están separadas en \texttt{UserRepository} y \texttt{UserService}, respectivamente.
+
+    \item \textbf{Open/Closed Principle (OCP):} \texttt{IUserRepository} es una interfaz que puede ser implementada de múltiples formas (\texttt{InMemoryUserRepository}, \texttt{DatabaseUserRepository}, etc.) sin modificar el código existente. El sistema está abierto para extensión pero cerrado para modificación.
+
+    \item \textbf{Liskov Substitution Principle (LSP):} \texttt{UserService} depende de la interfaz \texttt{IUserRepository}. Cualquier implementación de esta interfaz puede ser sustituida sin afectar la lógica del servicio, garantizando que el comportamiento sea consistente.
+
+    \item \textbf{Interface Segregation Principle (ISP):} Las interfaces están segregadas en \texttt{IUserReader} (solo lectura) e \texttt{IUserWriter} (solo escritura). Los clientes solo dependen de los métodos que realmente necesitan, evitando dependencias innecesarias.
+
+    \item \textbf{Dependency Inversion Principle (DIP):} Los módulos de alto nivel (\texttt{UserService}) no dependen de módulos de bajo nivel (\texttt{InMemoryUserRepository}). Ambos dependen de abstracciones (\texttt{IUserRepository}), lo que permite flexibilidad y facilita testing.
+\end{enumerate}
+
+\section{Ejecución del Proyecto}
+
+\subsection*{Instalación}
+\begin{verbatim}
+npm install
+\end{verbatim}
+
+\subsection*{Iniciar servidor}
+\begin{verbatim}
+npm run dev
+\end{verbatim}
+
+\subsection*{Acceso}
+Abrir navegador en: \texttt{http://localhost:3000}
+
+\subsection*{Interfaz Web}
+
+El sistema incluye una interfaz web completa que permite:
+
+\begin{itemize}
+    \item Registrar nuevos usuarios mediante un formulario
+    \item Visualizar la lista de usuarios registrados en tiempo real
+    \item Actualizar la lista de usuarios con un botón
+    \item Ver información de cada usuario (nombre, email, ID)
+\end{itemize}
+
+La interfaz consume la API REST implementada y demuestra la arquitectura SOLID de forma visual e interactiva.
+
+\end{document}
